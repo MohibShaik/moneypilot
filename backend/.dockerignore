@@ -1,0 +1,20 @@
+# Build output (rebuilt inside the image)
+target/
+
+# Maven wrapper jar (re-downloaded by the wrapper during the build)
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE / OS / logs
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+.DS_Store
+Thumbs.db
+*.log
+
+# VCS
+.git/
+.gitignore

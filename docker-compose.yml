@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: moneypilot-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: moneypilot
+      POSTGRES_USER: moneypilot
+      POSTGRES_PASSWORD: moneypilot_local
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - moneypilot_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moneypilot -d moneypilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  moneypilot_pgdata:

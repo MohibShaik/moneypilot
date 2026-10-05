@@ -1,0 +1,20 @@
+# Maven build output
+target/
+
+# Maven wrapper downloaded distribution (keep scripts + properties)
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

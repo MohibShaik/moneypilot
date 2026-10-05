@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# MoneyPilot — root .gitignore (backend: Java/Maven, mobile: Expo/React Native)
+# ---------------------------------------------------------------------------
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# --- Logs ---
+*.log
+
+# --- Java / Maven (backend) ---
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+
+# --- Node / Expo (mobile) ---
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/*.tsbuildinfo
+npm-debug.*
+yarn-error.*
+
+# --- Env / secrets (never commit) ---
+.env
+.env.*
+!.env.example
+
+# --- Local build artifacts at repo root ---
+/build.log
