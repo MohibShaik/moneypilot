@@ -36,7 +36,8 @@ export function DashboardScreen() {
     data.overview.totalOutstanding > 0 ||
     data.upcomingPayments.length > 0 ||
     data.loanSummary.loanCount > 0 ||
-    data.creditCardSummary.cardCount > 0;
+    data.creditCardSummary.cardCount > 0 ||
+    data.monthlySpending.expenses > 0;
 
   return (
     <ScrollView contentContainerStyle={styles.content}>

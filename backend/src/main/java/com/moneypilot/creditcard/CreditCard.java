@@ -10,7 +10,9 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.Generated;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.generator.EventType;
+import org.hibernate.type.SqlTypes;
 
 /**
  * JPA entity mapped to the V2 {@code credit_cards} table.
@@ -40,7 +42,8 @@ public class CreditCard {
     @Column(name = "bank", nullable = false)
     private String bank;
 
-    @Column(name = "last_four", nullable = false, updatable = false)
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "last_four", nullable = false, updatable = false, length = 4)
     private String lastFour;
 
     @Column(name = "credit_limit", nullable = false)

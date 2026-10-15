@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
 /**
- * Expense form validation (HLD §13, §23). Mirrors backend intent: amount > 0,
- * valid category and payment method, valid date; description and notes
- * optional. The backend remains authoritative.
+ * Expense form validation (HLD 13, 23). Mirrors backend intent: amount > 0,
+ * valid date; category, payment method, description and notes are optional
+ * (the backend accepts null for all four). The backend remains authoritative.
  */
 
 const positiveAmount = z
@@ -13,14 +13,15 @@ const positiveAmount = z
 
 export const expenseFormSchema = z.object({
   amount: positiveAmount,
-  categoryId: z.string().min(1, 'Select a category'),
-  paymentMethodId: z.string().min(1, 'Select a payment method'),
+  // Empty string means none selected.
+  categoryId: z.string(),
+  paymentMethodId: z.string(),
   expenseDate: z
     .string()
     .min(1, 'Date is required')
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD'),
-  description: z.string().max(255, 'Description is too long').optional().or(z.literal('')),
-  notes: z.string().max(1000, 'Notes are too long').optional().or(z.literal('')),
+  description: z.string().max(500, 'Description is too long').optional().or(z.literal('')),
+  notes: z.string().max(2000, 'Notes are too long').optional().or(z.literal('')),
 });
 
 export type ExpenseFormValues = z.infer<typeof expenseFormSchema>;

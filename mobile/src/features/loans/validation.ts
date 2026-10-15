@@ -33,8 +33,10 @@ export const loanFormSchema = z.object({
   lender: z.string().max(150, 'Lender name is too long').optional().or(z.literal('')),
   loanType: z.enum(LOAN_TYPES, { message: 'Select a loan type' }),
   principalAmount: positiveAmount,
-  outstandingPrincipal: nonNegativeAmount,
-  emiAmount: positiveAmount,
+  // outstandingPrincipal is derived server-side on create; optional in the form.
+  outstandingPrincipal: nonNegativeAmount.optional().or(z.literal('')),
+  // emiAmount is optional: the backend computes it when omitted.
+  emiAmount: positiveAmount.optional().or(z.literal('')),
   interestRate: nonNegativeAmount,
   startDate: z
     .string()

@@ -5,38 +5,87 @@ import { Controller, useForm } from 'react-hook-form';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { HelperText } from 'react-native-paper';
 
-import { AppButton, AppInput, CurrencyInput, DateField, SelectField } from '@/components';
+import {
+  AppButton,
+  AppInput,
+  useToast,
+  CurrencyInput,
+  DateField,
+  ErrorState,
+  LoadingState,
+  SelectField,
+} from '@/components';
 import type { ExpensesStackParamList } from '@/navigation/types';
+import type { ExpenseDto, ExpenseInput } from '@/services/api/expenseApi';
 import { spacing } from '@/theme/theme';
-import { findMockExpense } from './mock/mockExpenses';
+import { useCategories, useExpense, usePaymentMethods, useSaveExpense } from './useExpenses';
 import { expenseFormSchema, type ExpenseFormValues } from './validation';
-import { useCategories, usePaymentMethods } from './useExpenses';
 
 type Props = NativeStackScreenProps<ExpensesStackParamList, 'ExpenseForm'>;
 
+const NONE_OPTION = { value: '', label: 'None' };
+
 /**
- * Add / edit expense form (HLD §13, §23). React Hook Form + Zod: amount > 0,
- * valid category and payment method, valid date; description/notes optional.
- * UI-first: submission is a placeholder (no API). Edit mode pre-fills from mock.
+ * Add / edit expense (HLD 13, 23). Edit mode loads the expense from
+ * GET /expenses/{id} and renders the form only once it is available, so the
+ * form defaults are correct from the first render. Save calls POST or PUT.
  */
 export function ExpenseFormScreen({ route, navigation }: Props) {
   const expenseId = route.params?.expenseId;
-  const existing = expenseId ? findMockExpense(expenseId) : undefined;
-  const isEdit = Boolean(existing);
+  const existing = useExpense(expenseId);
 
+  if (expenseId && existing.isLoading) {
+    return <LoadingState message="Loading expense…" />;
+  }
+  if (expenseId && (existing.isError || !existing.data)) {
+    return (
+      <ErrorState
+        message="Unable to load this expense."
+        onRetry={() => {
+          void existing.refetch();
+        }}
+      />
+    );
+  }
+
+  return (
+    <ExpenseForm
+      expenseId={expenseId}
+      existing={existing.data}
+      onDone={() => navigation.goBack()}
+    />
+  );
+}
+
+type FormProps = {
+  expenseId?: string;
+  existing?: ExpenseDto;
+  onDone: () => void;
+};
+
+function ExpenseForm({ expenseId, existing, onDone }: FormProps) {
+  const isEdit = Boolean(expenseId);
   const categories = useCategories();
   const paymentMethods = usePaymentMethods();
-  const categoryOptions = categories
-    .filter((c) => c.categoryType === 'EXPENSE')
-    .map((c) => ({ value: c.id, label: c.name }));
-  const paymentMethodOptions = paymentMethods.map((p) => ({ value: p.id, label: p.label }));
+  const categoryOptions = [
+    NONE_OPTION,
+    ...categories
+      .filter((c) => c.categoryType === 'EXPENSE')
+      .map((c) => ({ value: c.id, label: c.name })),
+  ];
+  const paymentMethodOptions = [
+    NONE_OPTION,
+    ...paymentMethods.map((p) => ({ value: p.id, label: p.label })),
+  ];
 
-  const [submitting, setSubmitting] = useState(false);
+  const { showSuccess, showError } = useToast();
+  const save = useSaveExpense(expenseId);
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
     control,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
@@ -51,16 +100,37 @@ export function ExpenseFormScreen({ route, navigation }: Props) {
     mode: 'onBlur',
   });
 
-  const onSubmit = async (_values: ExpenseFormValues) => {
+  const onSubmit = (values: ExpenseFormValues) => {
     setFormError(null);
-    setSubmitting(true);
-    try {
-      navigation.goBack();
-    } catch {
-      setFormError('Unable to save the expense. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+    // Blank optional fields are omitted. On update the backend treats a missing
+    // value as null, which clears the field.
+    const body: ExpenseInput = {
+      amount: Number(values.amount),
+      expenseDate: values.expenseDate,
+    };
+    if (values.categoryId) body.categoryId = values.categoryId;
+    if (values.paymentMethodId) body.paymentMethodId = values.paymentMethodId;
+    if (values.description) body.description = values.description;
+    if (values.notes) body.notes = values.notes;
+
+    save.mutate(body, {
+      onSuccess: () => {
+        showSuccess(isEdit ? 'Expense updated' : 'Expense added');
+        onDone();
+      },
+      onError: (err) => {
+        if (err.fieldErrors) {
+          for (const [field, message] of Object.entries(err.fieldErrors)) {
+            if (field in values) {
+              setError(field as keyof ExpenseFormValues, { type: 'server', message });
+            }
+          }
+        }
+        const msg = err.message ?? 'Unable to save the expense. Please try again.';
+        setFormError(msg);
+        showError(msg);
+      },
+    });
   };
 
   return (
@@ -79,7 +149,12 @@ export function ExpenseFormScreen({ route, navigation }: Props) {
           control={control}
           name="amount"
           render={({ field: { onChange, value } }) => (
-            <CurrencyInput label="Amount" value={value} onChangeText={onChange} errorText={errors.amount?.message} />
+            <CurrencyInput
+              label="Amount"
+              value={value}
+              onChangeText={onChange}
+              errorText={errors.amount?.message}
+            />
           )}
         />
         <Controller
@@ -87,7 +162,7 @@ export function ExpenseFormScreen({ route, navigation }: Props) {
           name="categoryId"
           render={({ field: { onChange, value } }) => (
             <SelectField
-              label="Category"
+              label="Category (optional)"
               value={value}
               options={categoryOptions}
               onChange={onChange}
@@ -100,7 +175,7 @@ export function ExpenseFormScreen({ route, navigation }: Props) {
           name="paymentMethodId"
           render={({ field: { onChange, value } }) => (
             <SelectField
-              label="Payment method"
+              label="Payment method (optional)"
               value={value}
               options={paymentMethodOptions}
               onChange={onChange}
@@ -112,21 +187,40 @@ export function ExpenseFormScreen({ route, navigation }: Props) {
           control={control}
           name="expenseDate"
           render={({ field: { onChange, value } }) => (
-            <DateField label="Date" value={value} onChangeText={onChange} errorText={errors.expenseDate?.message} />
+            <DateField
+              label="Date"
+              value={value}
+              onChangeText={onChange}
+              errorText={errors.expenseDate?.message}
+            />
           )}
         />
         <Controller
           control={control}
           name="description"
           render={({ field: { onChange, value } }) => (
-            <AppInput label="Description (optional)" value={value} onChangeText={onChange} errorText={errors.description?.message} />
+            <AppInput
+              label="Description (optional)"
+              value={value}
+              onChangeText={onChange}
+              errorText={errors.description?.message}
+              multiline
+              numberOfLines={2}
+            />
           )}
         />
         <Controller
           control={control}
           name="notes"
           render={({ field: { onChange, value } }) => (
-            <AppInput label="Notes (optional)" value={value} onChangeText={onChange} errorText={errors.notes?.message} />
+            <AppInput
+              label="Notes (optional)"
+              value={value}
+              onChangeText={onChange}
+              errorText={errors.notes?.message}
+              multiline
+              numberOfLines={4}
+            />
           )}
         />
 
@@ -135,8 +229,8 @@ export function ExpenseFormScreen({ route, navigation }: Props) {
             label={isEdit ? 'Save changes' : 'Add expense'}
             variant="accent"
             onPress={handleSubmit(onSubmit)}
-            loading={submitting}
-            disabled={submitting}
+            loading={save.isPending}
+            disabled={save.isPending}
           />
         </View>
       </ScrollView>

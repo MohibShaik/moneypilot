@@ -5,10 +5,20 @@ import { Controller, useForm } from 'react-hook-form';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { HelperText } from 'react-native-paper';
 
-import { AppButton, AppInput, CurrencyInput, DateField, SelectField } from '@/components';
+import {
+  AppButton,
+  AppInput,
+  CurrencyInput,
+  DateField,
+  ErrorState,
+  LoadingState,
+  SelectField,
+  useToast,
+} from '@/components';
 import type { LoansStackParamList } from '@/navigation/types';
+import type { CreateLoanInput, UpdateLoanInput } from '@/services/api/loanApi';
 import { spacing } from '@/theme/theme';
-import { findMockLoanDetail } from './mock/mockLoans';
+import { useLoan, useSaveLoan } from './useLoans';
 import {
   LOAN_STATUS_OPTIONS,
   LOAN_TYPE_OPTIONS,
@@ -19,23 +29,62 @@ import {
 type Props = NativeStackScreenProps<LoansStackParamList, 'LoanForm'>;
 
 /**
- * Add / edit loan form (HLD §11, §23). React Hook Form + Zod with validation
- * mirroring the backend V2 constraints. UI-first: submission is a placeholder —
- * no API call. In edit mode it pre-fills from mock detail. Real
- * create/update wiring (`/api/v1/loans`) is added during API integration
- * without changing this screen's structure.
+ * Add / edit loan (HLD 11, 23). On create the backend derives outstanding
+ * principal, end date and the EMI schedule, so those are not sent. On edit only
+ * name, lender and status are mutable (financial terms are immutable in V1), so
+ * the financial inputs render disabled. Edit mode loads the loan first.
  */
 export function LoanFormScreen({ route, navigation }: Props) {
   const loanId = route.params?.loanId;
-  const existing = loanId ? findMockLoanDetail(loanId) : undefined;
-  const isEdit = Boolean(existing);
+  const existing = useLoan(loanId ?? '');
 
-  const [submitting, setSubmitting] = useState(false);
+  if (loanId && existing.isLoading) {
+    return <LoadingState message="Loading loan..." />;
+  }
+  if (loanId && (existing.isError || !existing.data)) {
+    return (
+      <ErrorState
+        message="Unable to load this loan."
+        onRetry={() => {
+          void existing.refetch();
+        }}
+      />
+    );
+  }
+
+  return (
+    <LoanForm loanId={loanId} existing={existing.data ?? undefined} onDone={() => navigation.goBack()} />
+  );
+}
+
+type FormProps = {
+  loanId?: string;
+  existing?: {
+    name: string;
+    lender: string | null;
+    loanType: LoanFormValues['loanType'];
+    principalAmount: number;
+    outstandingPrincipal: number;
+    emiAmount: number;
+    interestRate: number;
+    startDate: string;
+    endDate: string | null;
+    tenureMonths: number;
+    status: LoanFormValues['status'];
+  };
+  onDone: () => void;
+};
+
+function LoanForm({ loanId, existing, onDone }: FormProps) {
+  const isEdit = Boolean(loanId);
+  const save = useSaveLoan(loanId);
+  const { showSuccess, showError } = useToast();
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
     control,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<LoanFormValues>({
     resolver: zodResolver(loanFormSchema),
@@ -55,24 +104,43 @@ export function LoanFormScreen({ route, navigation }: Props) {
     mode: 'onBlur',
   });
 
-  const onSubmit = async (_values: LoanFormValues) => {
+  const onSubmit = (values: LoanFormValues) => {
     setFormError(null);
-    setSubmitting(true);
-    try {
-      // UI-first placeholder: no network call. Return to the previous screen.
-      navigation.goBack();
-    } catch {
-      setFormError('Unable to save the loan. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+    const body: CreateLoanInput | UpdateLoanInput = isEdit
+      ? { name: values.name, lender: values.lender || undefined, status: values.status }
+      : {
+          name: values.name,
+          lender: values.lender || undefined,
+          loanType: values.loanType,
+          principalAmount: Number(values.principalAmount),
+          interestRate: Number(values.interestRate),
+          startDate: values.startDate,
+          tenureMonths: Number(values.tenureMonths),
+          emiAmount: values.emiAmount ? Number(values.emiAmount) : undefined,
+        };
+
+    save.mutate(body, {
+      onSuccess: () => {
+        showSuccess(isEdit ? 'Loan updated' : 'Loan added');
+        onDone();
+      },
+      onError: (err) => {
+        if (err.fieldErrors) {
+          for (const [field, message] of Object.entries(err.fieldErrors)) {
+            if (field in values) {
+              setError(field as keyof LoanFormValues, { type: 'server', message });
+            }
+          }
+        }
+        const msg = err.message ?? 'Unable to save the loan. Please try again.';
+        setFormError(msg);
+        showError(msg);
+      },
+    });
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {formError ? (
           <HelperText type="error" visible>
@@ -98,97 +166,61 @@ export function LoanFormScreen({ route, navigation }: Props) {
           control={control}
           name="loanType"
           render={({ field: { onChange, value } }) => (
-            <SelectField
-              label="Loan type"
-              value={value}
-              options={LOAN_TYPE_OPTIONS}
-              onChange={onChange}
-              errorText={errors.loanType?.message}
-            />
+            <SelectField label="Loan type" value={value} options={LOAN_TYPE_OPTIONS} onChange={onChange} errorText={errors.loanType?.message} disabled={isEdit} />
           )}
         />
         <Controller
           control={control}
           name="principalAmount"
           render={({ field: { onChange, value } }) => (
-            <CurrencyInput label="Principal amount" value={value} onChangeText={onChange} errorText={errors.principalAmount?.message} />
-          )}
-        />
-        <Controller
-          control={control}
-          name="outstandingPrincipal"
-          render={({ field: { onChange, value } }) => (
-            <CurrencyInput label="Outstanding principal" value={value} onChangeText={onChange} errorText={errors.outstandingPrincipal?.message} />
-          )}
-        />
-        <Controller
-          control={control}
-          name="emiAmount"
-          render={({ field: { onChange, value } }) => (
-            <CurrencyInput label="EMI amount" value={value} onChangeText={onChange} errorText={errors.emiAmount?.message} />
+            <CurrencyInput label="Principal amount" value={value} onChangeText={onChange} errorText={errors.principalAmount?.message} disabled={isEdit} />
           )}
         />
         <Controller
           control={control}
           name="interestRate"
           render={({ field: { onChange, value } }) => (
-            <AppInput
-              label="Interest rate (%)"
-              value={value}
-              onChangeText={onChange}
-              errorText={errors.interestRate?.message}
-              keyboardType="decimal-pad"
-            />
+            <AppInput label="Interest rate (%)" value={value} onChangeText={onChange} errorText={errors.interestRate?.message} keyboardType="decimal-pad" disabled={isEdit} />
+          )}
+        />
+        <Controller
+          control={control}
+          name="emiAmount"
+          render={({ field: { onChange, value } }) => (
+            <CurrencyInput label="EMI amount (optional)" value={value ?? ''} onChangeText={onChange} errorText={errors.emiAmount?.message} disabled={isEdit} />
           )}
         />
         <Controller
           control={control}
           name="startDate"
           render={({ field: { onChange, value } }) => (
-            <DateField label="Start date" value={value} onChangeText={onChange} errorText={errors.startDate?.message} />
-          )}
-        />
-        <Controller
-          control={control}
-          name="endDate"
-          render={({ field: { onChange, value } }) => (
-            <DateField label="End date (optional)" value={value} onChangeText={onChange} errorText={errors.endDate?.message} />
+            <DateField label="Start date" value={value} onChangeText={onChange} errorText={errors.startDate?.message} disabled={isEdit} />
           )}
         />
         <Controller
           control={control}
           name="tenureMonths"
           render={({ field: { onChange, value } }) => (
-            <AppInput
-              label="Tenure (months)"
-              value={value}
-              onChangeText={onChange}
-              errorText={errors.tenureMonths?.message}
-              keyboardType="numeric"
-            />
+            <AppInput label="Tenure (months)" value={value} onChangeText={onChange} errorText={errors.tenureMonths?.message} keyboardType="numeric" disabled={isEdit} />
           )}
         />
-        <Controller
-          control={control}
-          name="status"
-          render={({ field: { onChange, value } }) => (
-            <SelectField
-              label="Status"
-              value={value}
-              options={LOAN_STATUS_OPTIONS}
-              onChange={onChange}
-              errorText={errors.status?.message}
-            />
-          )}
-        />
+        {isEdit ? (
+          <Controller
+            control={control}
+            name="status"
+            render={({ field: { onChange, value } }) => (
+              <SelectField label="Status" value={value} options={LOAN_STATUS_OPTIONS} onChange={onChange} errorText={errors.status?.message} />
+            )}
+          />
+        ) : null}
 
         <View style={styles.submit}>
           <AppButton
             label={isEdit ? 'Save changes' : 'Add loan'}
             variant="accent"
             onPress={handleSubmit(onSubmit)}
-            loading={submitting}
-            disabled={submitting}
+            loading={save.isPending}
+            disabled={save.isPending}
           />
         </View>
       </ScrollView>

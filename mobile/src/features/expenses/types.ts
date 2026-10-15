@@ -11,8 +11,8 @@ export type Category = {
   id: string;
   name: string;
   categoryType: CategoryType;
-  /** null = system/default category; set = user-owned (backend V2 semantics). */
-  userId: string | null;
+  /** true = shared system/default category; false = user-owned. */
+  system: boolean;
 };
 
 export type PaymentMethodType =

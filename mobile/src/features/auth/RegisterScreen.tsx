@@ -7,6 +7,7 @@ import { HelperText, Snackbar, Text, TextInput } from 'react-native-paper';
 
 import { AppButton } from '@/components/AppButton';
 import { AppInput } from '@/components/AppInput';
+import { useRegister } from '@/hooks/useRegister';
 import type { AuthStackParamList } from '@/navigation/types';
 import { palette, spacing } from '@/theme/theme';
 import { registerSchema, type RegisterFormValues } from './validation';
@@ -17,17 +18,13 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
  * Registration screen (HLD §9).
  *
  * Collects display name, email, password, confirm password, and optional
- * currency/timezone, validated client-side with React Hook Form + Zod. The
- * rules mirror the backend (name 1–100, email ≤254, password 8–128, currency
- * 3 uppercase, IANA timezone) with confirm-password enforced only on the client.
- *
- * UI-first: submission is a placeholder — it does not call the API and issues no
- * token (registration never issues a JWT, HLD §9/§10). On success the user is
- * returned to Login to sign in. Real `POST /api/v1/auth/register` wiring happens
- * during API integration without changing this screen's structure.
+ * currency/timezone, validated client-side with React Hook Form + Zod.
+ * Calls POST /api/v1/auth/register via useRegister. Registration returns a
+ * profile and issues no token, so on success we show a confirmation and route
+ * the user to Login. Backend field errors are mapped onto the matching inputs.
  */
 export function RegisterScreen({ navigation }: Props) {
-  const [submitting, setSubmitting] = useState(false);
+  const registerMutation = useRegister();
   const [formError, setFormError] = useState<string | null>(null);
   const [registered, setRegistered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -36,6 +33,7 @@ export function RegisterScreen({ navigation }: Props) {
   const {
     control,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -50,18 +48,30 @@ export function RegisterScreen({ navigation }: Props) {
     mode: 'onBlur',
   });
 
-  const onSubmit = async (_values: RegisterFormValues) => {
+  const onSubmit = (values: RegisterFormValues) => {
     setFormError(null);
-    setSubmitting(true);
-    try {
-      // UI-first placeholder: no network call, no token. Registration returns a
-      // profile on the backend; the user then logs in to obtain a token.
-      setRegistered(true);
-    } catch {
-      setFormError('Unable to create your account. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+    registerMutation.mutate(
+      {
+        displayName: values.displayName,
+        email: values.email,
+        password: values.password,
+        currency: values.currency,
+        timezone: values.timezone,
+      },
+      {
+        onSuccess: () => setRegistered(true),
+        onError: (err) => {
+          if (err.fieldErrors) {
+            for (const [field, message] of Object.entries(err.fieldErrors)) {
+              if (field in values) {
+                setError(field as keyof RegisterFormValues, { type: 'server', message });
+              }
+            }
+          }
+          setFormError(err.message ?? 'Unable to create your account. Please try again.');
+        },
+      },
+    );
   };
 
   return (
@@ -198,8 +208,8 @@ export function RegisterScreen({ navigation }: Props) {
             label="Create account"
             variant="accent"
             onPress={handleSubmit(onSubmit)}
-            loading={submitting}
-            disabled={submitting}
+            loading={registerMutation.isPending}
+            disabled={registerMutation.isPending}
           />
         </View>
 

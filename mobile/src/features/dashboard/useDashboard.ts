@@ -1,17 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
-import { mockDashboard } from './mock/mockDashboard';
+import { useMe } from '@/hooks/useMe';
+import { getDashboard, type DashboardResponse } from '@/services/api/dashboardApi';
 import type { DashboardData } from './types';
 
 /**
  * Data hook for the dashboard (HLD §18, §21).
  *
- * This abstraction is the seam between the screen and the data source. Today it
- * resolves isolated mock data after a short delay; when the backend is ready it
- * will be reimplemented with TanStack Query against `/api/v1/dashboard`, keeping
- * the same return shape so the screen does not change (HLD §21).
- *
- * The screen never knows whether the data is mock or API-backed.
+ * This is the seam between the screen and the data source. It fetches the
+ * real /api/v1/dashboard endpoint via TanStack Query and adapts the backend
+ * DashboardResponse into the DashboardData shape the screen consumes. The
+ * greeting name and currency come from the user's profile (GET /users/me).
  */
 export type UseDashboardResult = {
   data: DashboardData | null;
@@ -20,29 +19,64 @@ export type UseDashboardResult = {
   refetch: () => void;
 };
 
-/** Simulated latency so loading states are exercised during UI-first dev. */
-const MOCK_DELAY_MS = 600;
+// The dashboard endpoint provides only the current-month expense total
+// (not a loan/card payment breakdown), so those two rows are 0 until the
+// backend exposes them. Name and currency come from the profile.
+function toDashboardData(
+  r: DashboardResponse,
+  userName: string,
+  currency: string,
+): DashboardData {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return {
+    userName,
+    overview: {
+      totalOutstanding: r.totalOutstandingPrincipal + r.totalOutstandingStatementBalance,
+      currency,
+    },
+    upcomingPayments: r.upcomingDues.map((d) => ({
+      id: d.referenceId,
+      label: d.label,
+      kind: d.type,
+      amount: d.amountDue,
+      dueDate: d.dueDate,
+    })),
+    monthlySpending: {
+      month,
+      expenses: r.currentMonthExpenseTotal,
+      loanPayments: 0,
+      cardPayments: 0,
+    },
+    loanSummary: {
+      loanCount: r.activeLoanCount,
+      totalOutstanding: r.totalOutstandingPrincipal,
+    },
+    creditCardSummary: {
+      cardCount: r.activeCardCount,
+      totalOutstanding: r.totalOutstandingStatementBalance,
+      totalAvailable: r.totalCreditLimit - r.totalOutstandingStatementBalance,
+    },
+  };
+}
 
 export function useDashboard(): UseDashboardResult {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
+  const me = useMe();
+  const dashboard = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: getDashboard,
+  });
 
-  const load = useCallback(() => {
-    setIsLoading(true);
-    setIsError(false);
-    const timer = setTimeout(() => {
-      // Mock resolution. Replace with a TanStack Query fetch later.
-      setData(mockDashboard);
-      setIsLoading(false);
-    }, MOCK_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, []);
+  const userName = me.data?.displayName ?? 'there';
+  const currency = me.data?.currency ?? 'INR';
 
-  useEffect(() => {
-    const cancel = load();
-    return cancel;
-  }, [load]);
-
-  return { data, isLoading, isError, refetch: load };
+  return {
+    data: dashboard.data ? toDashboardData(dashboard.data, userName, currency) : null,
+    isLoading: dashboard.isLoading || me.isLoading,
+    isError: dashboard.isError || me.isError,
+    refetch: () => {
+      void dashboard.refetch();
+      void me.refetch();
+    },
+  };
 }

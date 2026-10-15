@@ -47,6 +47,7 @@ export const statusColors = {
   WAIVED: palette.textSecondary,
 
   ACTIVE: palette.success,
+  BLOCKED: palette.error, // red - card blocked
   CLOSED: palette.textSecondary,
   FORECLOSED: palette.warning,
 

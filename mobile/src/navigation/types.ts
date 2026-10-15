@@ -47,6 +47,8 @@ export type MoreStackParamList = {
   LoanEmiPayment: { targetId: string };
   /** Pay a card statement; `targetId` identifies the payable statement. */
   CardPayment: { targetId: string };
+  /** Manage the user payment methods. */
+  PaymentMethods: undefined;
   Profile: undefined;
   EditProfile: undefined;
   Settings: undefined;

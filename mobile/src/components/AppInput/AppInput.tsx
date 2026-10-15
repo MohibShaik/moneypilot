@@ -14,15 +14,20 @@ export type AppInputProps = {
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'decimal-pad';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   disabled?: boolean;
+  /** Render a taller multi-line text area (e.g. for notes). */
+  multiline?: boolean;
+  /** Visible rows when multiline (default 4). */
+  numberOfLines?: number;
   /** Optional trailing icon affordance (e.g. a password visibility toggle). */
   right?: React.ReactNode;
   testID?: string;
 };
 
 /**
- * Standard text input (HLD §17). Wraps Paper's TextInput with an attached error
+ * Standard text input (HLD 17). Wraps Paper TextInput with an attached error
  * HelperText so field-level validation messages render consistently and are
- * announced to screen readers (accessibility, §25).
+ * announced to screen readers (accessibility, 25). Supports an optional
+ * multi-line mode for longer free text such as notes.
  */
 export function AppInput({
   label,
@@ -34,6 +39,8 @@ export function AppInput({
   keyboardType = 'default',
   autoCapitalize = 'sentences',
   disabled = false,
+  multiline = false,
+  numberOfLines = 4,
   right,
   testID,
 }: AppInputProps) {
@@ -51,6 +58,9 @@ export function AppInput({
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         disabled={disabled}
+        multiline={multiline}
+        numberOfLines={multiline ? numberOfLines : undefined}
+        style={multiline ? { minHeight: 24 * numberOfLines } : undefined}
         right={right}
         testID={testID}
       />

@@ -11,6 +11,7 @@ import {
   PaymentDetailsScreen,
   PaymentHistoryScreen,
 } from '@/features/payments';
+import { PaymentMethodsScreen } from '@/features/paymentMethods';
 import { EditProfileScreen, ProfileScreen, SettingsScreen } from '@/features/profile';
 import { useAuthStore } from '@/store/authStore';
 import { palette, spacing } from '@/theme/theme';
@@ -42,6 +43,13 @@ function MoreHomeScreen({ navigation }: MoreHomeProps) {
           left={(p) => <List.Icon {...p} icon="history" />}
           right={() => <Ionicons name="chevron-forward" size={18} color={palette.textSecondary} />}
           onPress={() => navigation.navigate('PaymentHistory')}
+        />
+        <Divider />
+        <List.Item
+          title="Payment methods"
+          left={(p) => <List.Icon {...p} icon="credit-card-outline" />}
+          right={() => <Ionicons name="chevron-forward" size={18} color={palette.textSecondary} />}
+          onPress={() => navigation.navigate('PaymentMethods')}
         />
         <Divider />
         <List.Item
@@ -85,6 +93,11 @@ export function MoreNavigator() {
         name="CardPayment"
         component={CardPaymentScreen}
         options={{ title: 'Pay card', presentation: 'modal' }}
+      />
+      <Stack.Screen
+        name="PaymentMethods"
+        component={PaymentMethodsScreen}
+        options={{ title: 'Payment methods' }}
       />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
       <Stack.Screen

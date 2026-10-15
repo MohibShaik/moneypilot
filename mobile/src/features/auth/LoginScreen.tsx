@@ -7,8 +7,8 @@ import { HelperText, Text, TextInput } from 'react-native-paper';
 
 import { AppButton } from '@/components/AppButton';
 import { AppInput } from '@/components/AppInput';
+import { useLogin } from '@/hooks/useLogin';
 import type { AuthStackParamList } from '@/navigation/types';
-import { useAuthStore } from '@/store/authStore';
 import { palette, spacing } from '@/theme/theme';
 import { loginSchema, type LoginFormValues } from './validation';
 
@@ -17,15 +17,13 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 /**
  * Login screen (HLD §8).
  *
- * UI-first: validates input with React Hook Form + Zod, then performs a
- * placeholder sign-in that flips the session to authenticated. It does NOT mint
- * or store a fake JWT (HLD §8). Real authentication against
- * `POST /api/v1/auth/login` is wired during API integration; this screen's
- * structure (form, submit, error handling) stays the same.
+ * Validates input with React Hook Form + Zod, then calls the real login
+ * mutation (POST /api/v1/auth/login) via useLogin. On success the hook
+ * persists the JWT and flips the session to authenticated; on failure we
+ * show the normalized error message.
  */
 export function LoginScreen({ navigation }: Props) {
-  const signIn = useAuthStore((s) => s.signIn);
-  const [submitting, setSubmitting] = useState(false);
+  const loginMutation = useLogin();
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -39,19 +37,12 @@ export function LoginScreen({ navigation }: Props) {
     mode: 'onBlur',
   });
 
-  const onSubmit = async (values: LoginFormValues) => {
+  const onSubmit = (values: LoginFormValues) => {
     setFormError(null);
-    setSubmitting(true);
-    try {
-      // UI-first placeholder: no network call, no token. Marks the session
-      // active so the root navigator switches to the main app.
-      signIn(values.email);
-    } catch {
-      // When wired to the API, a failed login surfaces a generic message here.
-      setFormError('Unable to sign in. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+    loginMutation.mutate(values, {
+      onError: (err) =>
+        setFormError(err.message ?? 'Unable to sign in. Please try again.'),
+    });
   };
 
   return (
@@ -76,7 +67,7 @@ export function LoginScreen({ navigation }: Props) {
         <Controller
           control={control}
           name="email"
-          render={({ field: { onChange, onBlur, value } }) => (
+          render={({ field: { onChange, value } }) => (
             <AppInput
               label="Email"
               placeholder="you@example.com"
@@ -117,8 +108,8 @@ export function LoginScreen({ navigation }: Props) {
           <AppButton
             label="Login"
             onPress={handleSubmit(onSubmit)}
-            loading={submitting}
-            disabled={submitting}
+            loading={loginMutation.isPending}
+            disabled={loginMutation.isPending}
           />
         </View>
 
